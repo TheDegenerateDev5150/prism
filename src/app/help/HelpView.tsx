@@ -508,6 +508,8 @@ function IntegrationsHelp() {
         <Li><strong>Baikal:</strong> https://your-server/dav.php</Li>
         <Li><strong>Synology:</strong> https://your-nas:5001/caldav/</Li>
       </Ul>
+      <H3>Proton Calendar</H3>
+      <P>Proton Calendar does not offer a public API or native CalDAV endpoint. However, if you run <strong>Proton Mail Bridge</strong> on a local machine, it exposes a CalDAV interface that Prism can connect to. Both Prism and Bridge must be on the same network. Note: Bridge only exposes calendar events — Proton does not support task (VTODO) sync via any protocol.</P>
       <H2>Microsoft To Do</H2>
       <P>Bidirectional sync for Tasks, Shopping Lists, and Wish Lists. Configure each in its own Settings section. Uses newest-wins conflict resolution.</P>
       <H2>OneDrive Photos</H2>

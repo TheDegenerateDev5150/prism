@@ -394,6 +394,8 @@ Connect any CalDAV-compatible server to sync calendar events and tasks:
 - Read-only sync — credentials stored encrypted
 - Common URLs: Nextcloud `/remote.php/dav`, Radicale `/`, Baikal `/dav.php`, Synology `:5001/caldav/`
 
+**Proton Calendar**: Proton does not offer a public API or native CalDAV endpoint. If you run Proton Mail Bridge on a local machine, it exposes a CalDAV interface that Prism can connect to. Both Prism and Bridge must be on the same network. Note: Bridge only exposes calendar events — Proton does not support task (VTODO) sync via any protocol.
+
 ### Calendars
 Manage synced calendars. Enable/disable, assign to members, create calendar groups.
 
