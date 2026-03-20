@@ -271,8 +271,16 @@ export async function fetchCalDAVTasks(
     throw new Error(`Calendar not found: ${calendarHref}`);
   }
 
-  // Fetch all objects (tsdav doesn't filter by component type in time range for VTODOs)
-  const objects = await client.fetchCalendarObjects({ calendar });
+  // Fetch VTODO objects with explicit filter (default only returns VEVENT)
+  const objects = await client.fetchCalendarObjects({
+    calendar,
+    filters: [{
+      'comp-filter': {
+        _attributes: { name: 'VCALENDAR' },
+        'comp-filter': { _attributes: { name: 'VTODO' } },
+      },
+    }],
+  });
 
   const tasks: CalDAVTask[] = [];
 
