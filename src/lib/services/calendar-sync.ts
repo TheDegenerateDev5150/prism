@@ -387,3 +387,153 @@ export async function getCalendarSourcesWithStatus() {
     },
   });
 }
+
+
+// ====================================================================
+// CalDAV Sync
+// ====================================================================
+
+import { fetchCalDAVEvents, type CalDAVConnectionConfig } from '@/lib/integrations/caldav';
+
+/**
+ * Sync events from a single CalDAV calendar source.
+ */
+export async function syncCalDAVCalendarSource(
+  sourceId: string,
+  options: { timeMin?: Date; timeMax?: Date } = {}
+): Promise<{ synced: number; errors: string[] }> {
+  const errors: string[] = [];
+  let synced = 0;
+
+  const source = await db.query.calendarSources.findFirst({
+    where: eq(calendarSources.id, sourceId),
+  });
+
+  if (!source || source.provider !== 'caldav') {
+    return { synced: 0, errors: ['Not a CalDAV source'] };
+  }
+
+  if (!source.accessToken) {
+    return { synced: 0, errors: ['No credentials available'] };
+  }
+
+  let password: string;
+  try {
+    password = decrypt(source.accessToken);
+  } catch {
+    return { synced: 0, errors: ['Failed to decrypt credentials — may need to reconnect'] };
+  }
+
+  const config = source.syncErrors as CalDAVConnectionConfig | null;
+  if (!config?.serverUrl || !config?.username) {
+    return { synced: 0, errors: ['Missing CalDAV connection config'] };
+  }
+
+  const timeMin = options.timeMin || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const timeMax = options.timeMax || new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+
+  try {
+    const caldavEvents = await fetchCalDAVEvents(
+      config.serverUrl,
+      config.username,
+      password,
+      source.sourceCalendarId,
+      timeMin,
+      timeMax,
+    );
+
+    // Upsert events
+    for (const event of caldavEvents) {
+      const existing = await db.query.events.findFirst({
+        where: and(
+          eq(events.calendarSourceId, sourceId),
+          eq(events.externalEventId, event.uid),
+        ),
+      });
+
+      const eventData = {
+        title: event.title,
+        description: event.description,
+        location: event.location,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        allDay: event.allDay,
+        color: event.color || source.color,
+        recurring: event.recurring,
+        recurrenceRule: event.recurrenceRule,
+        calendarSourceId: sourceId,
+        externalEventId: event.uid,
+        updatedAt: new Date(),
+      };
+
+      if (existing) {
+        await db.update(events)
+          .set(eventData)
+          .where(eq(events.id, existing.id));
+      } else {
+        await db.insert(events).values(eventData);
+      }
+
+      synced++;
+    }
+
+    // Clean up events that no longer exist upstream
+    const upstreamUids = new Set(caldavEvents.map(e => e.uid));
+    const localEvents = await db.query.events.findMany({
+      where: and(
+        eq(events.calendarSourceId, sourceId),
+        gte(events.startTime, timeMin),
+        lte(events.startTime, timeMax),
+      ),
+    });
+
+    for (const local of localEvents) {
+      if (local.externalEventId && !upstreamUids.has(local.externalEventId)) {
+        await db.delete(events).where(eq(events.id, local.id));
+      }
+    }
+
+    // Update sync timestamp
+    await db.update(calendarSources)
+      .set({ lastSynced: new Date(), syncErrors: config })
+      .where(eq(calendarSources.id, sourceId));
+
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    errors.push(`CalDAV sync failed: ${msg}`);
+
+    // Store error in syncErrors while preserving config
+    await db.update(calendarSources)
+      .set({
+        syncErrors: { ...config, lastError: msg, lastErrorAt: new Date().toISOString() },
+      })
+      .where(eq(calendarSources.id, sourceId));
+  }
+
+  return { synced, errors };
+}
+
+/**
+ * Sync all enabled CalDAV calendar sources.
+ */
+export async function syncAllCalDAVCalendars(
+  options: { timeMin?: Date; timeMax?: Date } = {}
+): Promise<{ total: number; errors: string[] }> {
+  const allErrors: string[] = [];
+  let total = 0;
+
+  const sources = await db.query.calendarSources.findMany({
+    where: and(
+      eq(calendarSources.provider, 'caldav'),
+      eq(calendarSources.enabled, true),
+    ),
+  });
+
+  for (const source of sources) {
+    const result = await syncCalDAVCalendarSource(source.id, options);
+    total += result.synced;
+    allErrors.push(...result.errors);
+  }
+
+  return { total, errors: allErrors };
+}

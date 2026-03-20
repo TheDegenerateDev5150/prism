@@ -5,10 +5,11 @@ import { useSearchParams } from 'next/navigation';
 import { toast } from '@/components/ui/use-toast';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useConfirmDialog } from '@/lib/hooks/useConfirmDialog';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Server } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { CalDAVConnectDialog } from '../components/CalDAVConnectDialog';
 
 interface IntegrationStatus {
   google: {
@@ -296,7 +297,79 @@ export function ConnectedAccountsSection() {
         </CardContent>
       </Card>
 
+      {/* CalDAV Card */}
+      <CalDAVCard onRefresh={fetchStatus} />
+
       <ConfirmDialog {...confirmDialogProps} />
     </div>
+  );
+}
+
+function CalDAVCard({ onRefresh }: { onRefresh: () => void }) {
+  const [showConnect, setShowConnect] = useState(false);
+  const [sourceCount, setSourceCount] = useState(0);
+
+  useEffect(() => {
+    async function check() {
+      try {
+        const res = await fetch('/api/calendars');
+        if (res.ok) {
+          const data = await res.json();
+          const caldavSources = (data.calendars || []).filter((c: { provider: string }) => c.provider === 'caldav');
+          setSourceCount(caldavSources.length);
+        }
+      } catch { /* ignore */ }
+    }
+    check();
+  }, []);
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Server className="h-6 w-6 text-indigo-500" />
+              <div>
+                <CardTitle className="text-lg">CalDAV</CardTitle>
+                <CardDescription>Nextcloud, Radicale, Baikal, Synology, and other CalDAV servers</CardDescription>
+              </div>
+            </div>
+            {sourceCount > 0 ? (
+              <Badge variant="outline" className="border-green-500 text-green-600">
+                {sourceCount} calendar{sourceCount !== 1 ? 's' : ''}
+              </Badge>
+            ) : (
+              <Badge variant="secondary">Not Connected</Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {sourceCount > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {sourceCount} CalDAV calendar{sourceCount !== 1 ? 's' : ''} connected. Manage in the Calendars section.
+              </p>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowConnect(true)}
+            >
+              {sourceCount > 0 ? 'Add Another Server' : 'Connect CalDAV Server'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <CalDAVConnectDialog
+        open={showConnect}
+        onOpenChange={setShowConnect}
+        onConnected={() => {
+          onRefresh();
+          setSourceCount(prev => prev + 1);
+        }}
+      />
+    </>
   );
 }

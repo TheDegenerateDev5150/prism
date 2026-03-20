@@ -12,7 +12,12 @@ import { requireAuth } from '@/lib/auth';
 import {
   syncAllGoogleCalendars,
   syncGoogleCalendarSource,
+  syncAllCalDAVCalendars,
+  syncCalDAVCalendarSource,
 } from '@/lib/services/calendar-sync';
+import { db } from '@/lib/db/client';
+import { calendarSources } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * POST /api/calendars/sync
@@ -56,13 +61,21 @@ export async function POST(request: NextRequest) {
     let result: { synced?: number; total?: number; errors: string[] };
 
     if (body.calendarId) {
-      // Sync specific calendar
-      const syncResult = await syncGoogleCalendarSource(body.calendarId, options);
+      // Sync specific calendar — determine provider
+      const source = await db.query.calendarSources.findFirst({
+        where: eq(calendarSources.id, body.calendarId),
+      });
+      const syncFn = source?.provider === 'caldav' ? syncCalDAVCalendarSource : syncGoogleCalendarSource;
+      const syncResult = await syncFn(body.calendarId, options);
       result = { synced: syncResult.synced, errors: syncResult.errors };
     } else {
-      // Sync all calendars
-      const syncResult = await syncAllGoogleCalendars(options);
-      result = { total: syncResult.total, errors: syncResult.errors };
+      // Sync all calendars (Google + CalDAV)
+      const googleResult = await syncAllGoogleCalendars(options);
+      const caldavResult = await syncAllCalDAVCalendars(options);
+      result = {
+        total: googleResult.total + caldavResult.total,
+        errors: [...googleResult.errors, ...caldavResult.errors],
+      };
     }
 
     // Return appropriate response based on results

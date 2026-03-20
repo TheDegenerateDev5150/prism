@@ -396,7 +396,7 @@ export function CalendarsSection() {
                           </div>
                         )}
                         <div className="text-xs text-muted-foreground">
-                          {cal.provider === 'google' ? 'Google Calendar' : cal.provider}
+                          {cal.provider === 'google' ? 'Google Calendar' : cal.provider === 'caldav' ? 'CalDAV' : cal.provider}
                           {cal.displayName && cal.displayName !== cal.dashboardCalendarName && (
                             <span className="ml-2 text-muted-foreground/60">
                               (Source: {cal.displayName})
