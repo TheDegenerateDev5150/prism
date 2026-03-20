@@ -393,7 +393,8 @@ export async function getCalendarSourcesWithStatus() {
 // CalDAV Sync
 // ====================================================================
 
-import { fetchCalDAVEvents, type CalDAVConnectionConfig } from '@/lib/integrations/caldav';
+import { fetchCalDAVEvents, fetchCalDAVTasks, type CalDAVConnectionConfig } from '@/lib/integrations/caldav';
+import { tasks } from '@/lib/db/schema';
 
 /**
  * Sync events from a single CalDAV calendar source.
@@ -530,10 +531,96 @@ export async function syncAllCalDAVCalendars(
   });
 
   for (const source of sources) {
-    const result = await syncCalDAVCalendarSource(source.id, options);
-    total += result.synced;
-    allErrors.push(...result.errors);
+    // Sync events
+    const eventResult = await syncCalDAVCalendarSource(source.id, options);
+    total += eventResult.synced;
+    allErrors.push(...eventResult.errors);
+
+    // Also sync tasks (VTODO) from the same source
+    const taskResult = await syncCalDAVTasks(source.id);
+    total += taskResult.synced;
+    allErrors.push(...taskResult.errors);
   }
 
   return { total, errors: allErrors };
+}
+
+/**
+ * Sync tasks (VTODO) from a CalDAV calendar source into Prism tasks.
+ */
+export async function syncCalDAVTasks(
+  sourceId: string,
+): Promise<{ synced: number; errors: string[] }> {
+  const errors: string[] = [];
+  let synced = 0;
+
+  const source = await db.query.calendarSources.findFirst({
+    where: eq(calendarSources.id, sourceId),
+  });
+
+  if (!source || source.provider !== 'caldav') {
+    return { synced: 0, errors: ['Not a CalDAV source'] };
+  }
+
+  if (!source.accessToken) {
+    return { synced: 0, errors: ['No credentials available'] };
+  }
+
+  let password: string;
+  try {
+    password = decrypt(source.accessToken);
+  } catch {
+    return { synced: 0, errors: ['Failed to decrypt credentials'] };
+  }
+
+  const config = source.syncErrors as CalDAVConnectionConfig | null;
+  if (!config?.serverUrl || !config?.username) {
+    return { synced: 0, errors: ['Missing CalDAV connection config'] };
+  }
+
+  try {
+    const caldavTasks = await fetchCalDAVTasks(
+      config.serverUrl,
+      config.username,
+      password,
+      source.sourceCalendarId,
+    );
+
+    for (const task of caldavTasks) {
+      const externalId = `caldav:${source.id}:${task.uid}`;
+
+      const existing = await db.query.tasks.findFirst({
+        where: eq(tasks.externalId, externalId),
+      });
+
+      const taskData = {
+        title: task.title,
+        description: task.description,
+        dueDate: task.dueDate || null,
+        completed: task.completed,
+        completedAt: task.completedAt,
+        priority: (task.priority || 'medium') as 'high' | 'medium' | 'low',
+        category: task.categories[0] || null,
+        externalId,
+        externalUpdatedAt: new Date(),
+        lastSynced: new Date(),
+        updatedAt: new Date(),
+      };
+
+      if (existing) {
+        await db.update(tasks)
+          .set(taskData)
+          .where(eq(tasks.id, existing.id));
+      } else {
+        await db.insert(tasks).values(taskData);
+      }
+
+      synced++;
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    errors.push(`CalDAV task sync failed: ${msg}`);
+  }
+
+  return { synced, errors };
 }

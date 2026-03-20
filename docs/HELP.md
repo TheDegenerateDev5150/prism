@@ -117,7 +117,7 @@ On phones, the dashboard shows a simplified single-column layout with summary ca
 
 ### Setting Up Calendars
 
-Connect your calendars in **Settings > Connected Accounts** (Google Calendar via OAuth). Once connected, individual calendars appear in **Settings > Calendars** where you can:
+Connect your calendars in **Settings > Connected Accounts** via Google Calendar (OAuth) or CalDAV (Nextcloud, Radicale, Baikal, Synology). Once connected, individual calendars appear in **Settings > Calendars** where you can:
 
 - **Enable/disable** individual calendars from showing on the dashboard
 - **Assign to a family member** — each calendar is linked to a person or marked as "Family" (shared)
@@ -383,7 +383,16 @@ Add, edit, remove family members. Set names, colors, avatars, and roles.
 - **API Tokens** - Generate tokens for external integrations (Home Assistant, scripts)
 
 ### Connected Accounts
-Connect Google (Calendar) and Microsoft (To Do, OneDrive) accounts via OAuth.
+Connect Google (Calendar), Microsoft (To Do, OneDrive), and CalDAV servers via OAuth or credentials.
+
+### CalDAV (Nextcloud, Radicale, Baikal, Synology)
+Connect any CalDAV-compatible server to sync calendar events and tasks:
+- Provide server URL, username, and password/app-token
+- Prism discovers available calendars automatically
+- **Events** (VEVENT) sync into Prism's calendar views
+- **Tasks** (VTODO) sync into Prism's task list (if the calendar supports it)
+- Read-only sync — credentials stored encrypted
+- Common URLs: Nextcloud `/remote.php/dav`, Radicale `/`, Baikal `/dav.php`, Synology `:5001/caldav/`
 
 ### Calendars
 Manage synced calendars. Enable/disable, assign to members, create calendar groups.

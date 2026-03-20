@@ -493,6 +493,21 @@ function IntegrationsHelp() {
     <>
       <H2>Google Calendar</H2>
       <P>Connect in Settings &gt; Connected Accounts. Read-only sync — events appear in Prism but changes don&apos;t sync back to Google.</P>
+      <H2>CalDAV (Nextcloud, Radicale, Baikal, Synology)</H2>
+      <P>Connect any CalDAV-compatible calendar server in Settings &gt; Connected Accounts &gt; CalDAV. Prism discovers available calendars and lets you select which to sync.</P>
+      <Ul>
+        <Li><strong>Events</strong> — Calendar events (VEVENT) sync into Prism&apos;s calendar views</Li>
+        <Li><strong>Tasks</strong> — If the calendar supports VTODO, tasks sync into Prism&apos;s task list</Li>
+        <Li><strong>Read-only</strong> — Changes in Prism don&apos;t sync back to the CalDAV server</Li>
+        <Li><strong>Credentials</strong> — Stored encrypted; use an app-specific password when available</Li>
+      </Ul>
+      <P>Common server URLs:</P>
+      <Ul>
+        <Li><strong>Nextcloud:</strong> https://your-server/remote.php/dav</Li>
+        <Li><strong>Radicale:</strong> https://your-server/</Li>
+        <Li><strong>Baikal:</strong> https://your-server/dav.php</Li>
+        <Li><strong>Synology:</strong> https://your-nas:5001/caldav/</Li>
+      </Ul>
       <H2>Microsoft To Do</H2>
       <P>Bidirectional sync for Tasks, Shopping Lists, and Wish Lists. Configure each in its own Settings section. Uses newest-wins conflict resolution.</P>
       <H2>OneDrive Photos</H2>

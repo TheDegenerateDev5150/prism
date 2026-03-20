@@ -14,6 +14,8 @@ export interface CalDAVCalendar {
   color: string | null;
   description: string | null;
   ctag: string | null;
+  supportsEvents: boolean;
+  supportsTasks: boolean;
 }
 
 export interface CalDAVEvent {
@@ -27,6 +29,17 @@ export interface CalDAVEvent {
   color: string | null;
   recurring: boolean;
   recurrenceRule: string | null;
+}
+
+export interface CalDAVTask {
+  uid: string;
+  title: string;
+  description: string | null;
+  dueDate: Date | null;
+  completed: boolean;
+  completedAt: Date | null;
+  priority: 'high' | 'medium' | 'low' | null;
+  categories: string[];
 }
 
 export interface CalDAVConnectionConfig {
@@ -86,18 +99,23 @@ export async function discoverCalendars(
 
   return calendars
     .filter((cal: DAVCalendar) => {
-      // Only include calendars that support VEVENT
+      // Include calendars that support VEVENT or VTODO
       const components = cal.components as string[] | undefined;
-      if (components && !components.includes('VEVENT')) return false;
+      if (components && !components.includes('VEVENT') && !components.includes('VTODO')) return false;
       return true;
     })
-    .map((cal: DAVCalendar) => ({
-      href: cal.url,
-      displayName: String(cal.displayName || 'Unnamed Calendar'),
-      color: String((cal as Record<string, unknown>).calendarColor || '') || null,
-      description: cal.description ? String(cal.description) : null,
-      ctag: (cal as Record<string, unknown>).ctag ? String((cal as Record<string, unknown>).ctag) : null,
-    }));
+    .map((cal: DAVCalendar) => {
+      const components = cal.components as string[] | undefined;
+      return {
+        href: cal.url,
+        displayName: String(cal.displayName || 'Unnamed Calendar'),
+        color: String((cal as Record<string, unknown>).calendarColor || '') || null,
+        description: cal.description ? String(cal.description) : null,
+        ctag: (cal as Record<string, unknown>).ctag ? String((cal as Record<string, unknown>).ctag) : null,
+        supportsEvents: !components || components.includes('VEVENT'),
+        supportsTasks: !!components && components.includes('VTODO'),
+      };
+    });
 }
 
 /**
@@ -227,6 +245,91 @@ function makeEvent(event: ICAL.Event, vevent: ICAL.Component): CalDAVEvent {
     color: null,
     recurring: false,
     recurrenceRule: null,
+  };
+}
+
+/**
+ * Fetch tasks (VTODO) from a CalDAV calendar.
+ */
+export async function fetchCalDAVTasks(
+  serverUrl: string,
+  username: string,
+  password: string,
+  calendarHref: string,
+): Promise<CalDAVTask[]> {
+  const client = await createDAVClient({
+    serverUrl,
+    credentials: { username, password },
+    authMethod: 'Basic',
+    defaultAccountType: 'caldav',
+  });
+
+  const calendars = await client.fetchCalendars();
+  const calendar = calendars.find((c: DAVCalendar) => c.url === calendarHref);
+
+  if (!calendar) {
+    throw new Error(`Calendar not found: ${calendarHref}`);
+  }
+
+  // Fetch all objects (tsdav doesn't filter by component type in time range for VTODOs)
+  const objects = await client.fetchCalendarObjects({ calendar });
+
+  const tasks: CalDAVTask[] = [];
+
+  for (const obj of objects) {
+    try {
+      const parsed = parseVTodoObject(obj);
+      if (parsed) tasks.push(parsed);
+    } catch (error) {
+      console.error('Failed to parse CalDAV task:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  return tasks;
+}
+
+/**
+ * Parse a VTODO iCalendar object into a task.
+ */
+function parseVTodoObject(obj: DAVObject): CalDAVTask | null {
+  const data = obj.data;
+  if (!data) return null;
+
+  const jcal = ICAL.parse(data);
+  const comp = new ICAL.Component(jcal);
+  const vtodo = comp.getFirstSubcomponent('vtodo');
+
+  if (!vtodo) return null;
+
+  const summary = vtodo.getFirstPropertyValue('summary');
+  if (!summary) return null;
+
+  const description = vtodo.getFirstPropertyValue('description');
+  const due = vtodo.getFirstPropertyValue('due');
+  const completed = vtodo.getFirstPropertyValue('completed');
+  const status = vtodo.getFirstPropertyValue('status');
+  const priority = vtodo.getFirstPropertyValue('priority');
+  const categories = vtodo.getFirstPropertyValue('categories');
+  const uid = vtodo.getFirstPropertyValue('uid');
+
+  // Map iCal priority (1-9) to Prism priority
+  let prismPriority: 'high' | 'medium' | 'low' | null = null;
+  if (priority) {
+    const p = Number(priority);
+    if (p >= 1 && p <= 3) prismPriority = 'high';
+    else if (p >= 4 && p <= 6) prismPriority = 'medium';
+    else if (p >= 7 && p <= 9) prismPriority = 'low';
+  }
+
+  return {
+    uid: String(uid || `vtodo-${Date.now()}`),
+    title: String(summary),
+    description: description ? String(description) : null,
+    dueDate: due ? (due instanceof ICAL.Time ? due.toJSDate() : new Date(String(due))) : null,
+    completed: status === 'COMPLETED' || !!completed,
+    completedAt: completed ? (completed instanceof ICAL.Time ? completed.toJSDate() : new Date(String(completed))) : null,
+    priority: prismPriority,
+    categories: categories ? (Array.isArray(categories) ? categories.map(String) : [String(categories)]) : [],
   };
 }
 

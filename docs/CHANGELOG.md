@@ -5,6 +5,9 @@ All notable changes to Prism are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **CalDAV Integration**: Connect Nextcloud, Radicale, Baikal, Synology, and any CalDAV server for calendar sync
+- **CalDAV Tasks**: VTODO items from CalDAV servers sync into Prism's task list
+- **CalDAV Settings UI**: Multi-step connect dialog with server URL hints, connection testing, and calendar discovery
 - **Docker**: Multi-arch builds (amd64 + arm64) — Raspberry Pi support via pre-built GHCR image
 - **Calendar**: Profile columns now follow family member sort order from Settings
 - **Calendar**: Family calendar group always sorts first before person columns
