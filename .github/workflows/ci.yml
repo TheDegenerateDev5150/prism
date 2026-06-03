@@ -187,6 +187,96 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  e2e-nginx-fixture:
+    name: E2E nginx TLS fixture (modality TODO #1 path B)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Same Playwright container as e2e-modality — Chromium preinstalled,
+    # Ubuntu Jammy base so apt-get can add nginx-light and openssl.
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.2-jammy
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: prism
+          POSTGRES_PASSWORD: ci_test_password
+          POSTGRES_DB: prism
+        options: >-
+          --health-cmd "pg_isready -U prism"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://prism:ci_test_password@postgres:5432/prism
+      REDIS_URL: redis://redis:6379
+      PORT: '3000'
+      # APP_URL intentionally left as http — confirms the fix reads
+      # X-Forwarded-Proto rather than APP_URL to decide cookie Secure flag.
+      APP_URL: http://localhost:3000
+      SESSION_SECRET: ci_test_session_secret_padding32
+      PIN_ENCRYPTION_KEY: ci_test_pin_encryption_key_pad32
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      E2E_HAS_TEST_DB: '1'
+      E2E_PIN: '1234'
+      # Enables the path-B spec (skipped without this flag).
+      E2E_NGINX_PROXY: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Install psql, openssl, nginx-light
+        run: apt-get update && apt-get install -y --no-install-recommends postgresql-client openssl nginx-light
+
+      - name: Apply base schema
+        env:
+          PGPASSWORD: ci_test_password
+        run: psql -h postgres -U prism -d prism -v ON_ERROR_STOP=1 -f src/lib/db/init/02-schema.sql
+
+      - name: Apply migrations
+        run: node scripts/migrate.js
+
+      - name: Seed database
+        run: npm run db:seed
+
+      - name: Generate self-signed cert
+        run: bash e2e/fixtures/generate-self-signed.sh
+
+      - name: Start nginx (TLS proxy on 443 → Next.js on 3000)
+        run: |
+          mkdir -p /tmp/nginx-client-body /tmp/nginx-proxy /tmp/nginx-fastcgi /tmp/nginx-uwsgi /tmp/nginx-scgi
+          nginx -t -c "$(pwd)/e2e/fixtures/nginx.conf"
+          nginx -c "$(pwd)/e2e/fixtures/nginx.conf"
+
+      - name: Run nginx fixture spec
+        run: npx playwright test e2e/reverse-proxy-nginx.spec.ts --reporter=list
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-nginx
+          path: playwright-report/
+          retention-days: 7
+
   visual-regression:
     name: Visual regression (modality TODO #2)
     runs-on: ubuntu-latest
